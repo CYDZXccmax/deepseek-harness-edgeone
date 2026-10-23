@@ -38,6 +38,7 @@ python/**/.pytest_cache/
 packages/**/__pycache__/
 apps/web/dist/
 .artifacts/
+.edgeone/
 .dsh-build/
 .dsh-report/
 .playwright-mcp/
