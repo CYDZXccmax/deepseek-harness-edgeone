@@ -109,8 +109,36 @@ export function aggregateBuildArgs(face: 'host' | 'client'): string[] {
   return [...hostHeapArgs(face), fileURLToPath(import.meta.resolve('typescript/bin/tsc')), '-b', `tsconfig.${face}.json`]
 }
 
+/** Host compiler heap ceiling in MiB, the historical value a constrained build host lowers. */
+const HOST_TSC_HEAP_MB_DEFAULT = 4096
+
+/**
+ * Resolve the Node heap arguments one compiler face needs.
+ *
+ * The Host aggregate holds every referenced package's symbol graph at once, so it carries an
+ * explicit ceiling. A build host with less RAM lowers `DSH_HOST_TSC_HEAP_MB` and serializes the
+ * gate graph through `DSH_GATE_CONCURRENCY` rather than raising this value back up.
+ * @param face - Compiler face whose heap ceiling applies.
+ * @returns Node arguments for the Host face; empty for the Client face, which keeps Node's default.
+ * @throws If `DSH_HOST_TSC_HEAP_MB` is set to anything but a positive decimal integer.
+ */
 function hostHeapArgs(face: 'host' | 'client'): string[] {
-  return face === 'host' ? ['--max-old-space-size=4096'] : []
+  return face === 'host' ? [`--max-old-space-size=${String(hostHeapCeilingMb(process.env.DSH_HOST_TSC_HEAP_MB))}`] : []
+}
+
+/**
+ * Read the configured Host heap ceiling.
+ * @param configured - Raw `DSH_HOST_TSC_HEAP_MB` value, absent when unset.
+ * @returns The ceiling in MiB, `HOST_TSC_HEAP_MB_DEFAULT` when unset or empty.
+ * @throws If the value is not a positive decimal integer.
+ */
+function hostHeapCeilingMb(configured: string | undefined): number {
+  if (configured === undefined || configured === '') return HOST_TSC_HEAP_MB_DEFAULT
+  const heapMb = Number.parseInt(configured, 10)
+  if (!Number.isSafeInteger(heapMb) || heapMb < 1 || String(heapMb) !== configured) {
+    throw new Error(`compile-referenced-projects: DSH_HOST_TSC_HEAP_MB must be a positive decimal integer, got ${JSON.stringify(configured)}`)
+  }
+  return heapMb
 }
 
 /**

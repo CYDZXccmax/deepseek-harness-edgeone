@@ -178,7 +178,9 @@ export default defineConfig({
     // The worker bootstrap holds its page at top-level await; Vite's default
     // `modules` target (es2020-era) rejects that syntax.
     target: 'es2022',
-    sourcemap: true,
+    // Source maps hold the whole module graph twice while rollup finalizes chunks; a build host
+    // with little RAM sets DSH_WEB_SOURCEMAP=0, which is the only value that drops them entirely.
+    sourcemap: process.env.DSH_WEB_SOURCEMAP !== '0',
     rollupOptions: {
       input: {
         index: src('./index.html'),
