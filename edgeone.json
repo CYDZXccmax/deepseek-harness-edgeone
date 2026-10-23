@@ -1,5 +1,16 @@
 {
   "installCommand": "bash scripts/edgeone.sh install",
   "buildCommand": "bash scripts/edgeone.sh build",
-  "outputDirectory": "apps/web/dist"
+  "outputDirectory": "apps/web/dist",
+  "headers": [
+    {
+      "source": "/preview/*",
+      "headers": [
+        {
+          "key": "Content-Encoding",
+          "value": "identity"
+        }
+      ]
+    }
+  ]
 }
