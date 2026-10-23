@@ -72,7 +72,7 @@ type GenerationOutcome =
  * @returns a rolldown-compatible plugin that lowers source decorators and emits local and Host-for-Client artifacts.
  */
 export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlugin {
-  const artifacts = pluginOptions.artifacts !== false
+  const emitArtifacts = pluginOptions.artifacts !== false
   const artifactsByRoot = new Map<string, readonly WorkspaceEmitResult[]>()
   const generations = new Map<string, Promise<GenerationOutcome>>()
   const emittedWorkspaces = new Set<string>()
@@ -93,7 +93,7 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
     buildStart(inputOptions) {
       // tsdown builds every workspace package concurrently through this one
       // plugin instance; the first package build to start launches generation.
-      if (artifacts && pluginOptions.mode === 'workspace') void workspaceGeneration(findWorkspaceRoot(inputOptions.cwd))
+      if (emitArtifacts && pluginOptions.mode === 'workspace') void workspaceGeneration(findWorkspaceRoot(inputOptions.cwd))
     },
     transform: {
       // Rolldown evaluates the id filter natively, so non-TypeScript modules
@@ -119,7 +119,7 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
     },
     async writeBundle(bundleOptions) {
       // A standalone generation pass owns the artifacts in this configuration.
-      if (!artifacts) return
+      if (!emitArtifacts) return
       // options.dir is the package's absolute outDir (<package>/lib); its
       // nearest package.json owns the bundle even when a custom config writes
       // a nested output such as <package>/lib/dev.
