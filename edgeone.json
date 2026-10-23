@@ -1,0 +1,5 @@
+{
+  "installCommand": "npm i -g pnpm@11.28.5 && pnpm install --frozen-lockfile --ignore-scripts",
+  "buildCommand": "pnpm run build:edgeone",
+  "outputDirectory": "apps/web/dist"
+}
