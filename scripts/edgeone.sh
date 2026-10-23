@@ -63,12 +63,19 @@ build_artifacts() {
 preview_deployment() {
   prepare_node
   local dist="$root/apps/web/dist"
+  log "packing the Web Worker page and image"
+  # `build:preview` rebuilds the two Worker packages in package mode before it
+  # runs vite again: the workspace passes leave the packer's `lib/bin.js` and the
+  # runtime's Worker entry out, and the page cannot start without either.
+  #
+  # scripts/build-edgeone.ts hands its ceilings to the artifact build only, so
+  # restate the two this half needs: the same host, the same rollup peak.
+  DSH_WEB_SOURCEMAP=0 NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=3072" \
+    pnpm --filter @deepseek-ai/dsh-web-frontend run build:preview
   if [ ! -f "$dist/preview.html" ]; then
-    printf 'edgeone: %s is missing; the web gate did not emit the worker page\n' "$dist/preview.html" >&2
+    printf 'edgeone: %s is missing; the web build did not emit the worker page\n' "$dist/preview.html" >&2
     exit 1
   fi
-  log "packing the Web Worker image"
-  pnpm --filter @deepseek-ai/dsh-web-frontend exec dsh-pack-vfs-image --out dist/preview/vfs-image.tar.gz
   # Source maps would publish the whole module graph and only inflate the upload.
   find "$dist" -name '*.map' -delete
   cp "$dist/preview.html" "$dist/index.html"
