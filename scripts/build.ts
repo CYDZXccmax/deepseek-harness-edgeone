@@ -69,7 +69,9 @@ export function parseBuildArguments(args: readonly string[]): BuildArguments {
 /**
  * Construct the build steps of one scope as a gate dependency graph.
  * Artifact steps keep the serial order native, Host compilation, Host bundle (Typert),
- * Desktop bundle, Client compilation, Client bundle, then Web. The typecheck scope runs Host
+ * Desktop bundle, Client compilation, Client bundle, then Web. `DSH_HOST_BUNDLE_SHARDS`
+ * replaces the Host bundle step with that many sequential passes, each over one batch of
+ * workspace packages; see {@link artifactGates}. The typecheck scope runs Host
  * compilation beside the bundle-free Typert pass, which reads only source, and then Client
  * compilation, which needs both outputs; it writes no bundle. In the complete and typecheck
  * scopes each aggregate check waits only for its own face's package compilation; alone, the
@@ -91,9 +93,7 @@ export function buildGates(
   const gates: Gate[] = []
   if (scope === 'complete' || scope === 'artifacts') {
     gates.push(pnpmGate('native', 'native addon', ['run', 'build:native-system'], [], env))
-    for (const step of libraryBuildSteps(root, 'all')) {
-      gates.push(libraryGate(step, step.id === 'host-src' ? ['native'] : step.needs, env))
-    }
+    for (const gate of artifactGates(root, env)) gates.push(gate)
     gates.push(pnpmGate('web', 'Web build', ['run', 'build:web'], ['client-bundle'], env))
   }
   if (scope === 'typecheck') {
@@ -112,6 +112,67 @@ export function buildGates(
         needs: scope === 'check' ? [] : [`${face}-src`],
         env,
       })
+    }
+  }
+  return gates
+}
+
+/** Most sequential batches one build may split the Host bundler pass into. */
+const HOST_BUNDLE_SHARD_LIMIT = 8
+
+/**
+ * Read how many sequential batches the Host bundler pass runs in.
+ * @param configured - Raw `DSH_HOST_BUNDLE_SHARDS` value, absent when unset.
+ * @returns The batch count, `1` when unset or empty.
+ * @throws If the value is not a decimal integer from 1 through `HOST_BUNDLE_SHARD_LIMIT`.
+ */
+function hostBundleShards(configured: string | undefined): number {
+  if (configured === undefined || configured === '') return 1
+  const shards = Number.parseInt(configured, 10)
+  if (!Number.isSafeInteger(shards) || shards < 1 || shards > HOST_BUNDLE_SHARD_LIMIT || String(shards) !== configured) {
+    throw new Error(`build: DSH_HOST_BUNDLE_SHARDS must be a decimal integer from 1 to ${String(HOST_BUNDLE_SHARD_LIMIT)}, got ${JSON.stringify(configured)}`)
+  }
+  return shards
+}
+
+/**
+ * List the artifact gates from Host compilation through the Client bundle, splitting the Host
+ * bundler pass when asked.
+ *
+ * `DSH_HOST_BUNDLE_SHARDS` runs the Host bundler as that many sequential passes over disjoint
+ * batches of workspace packages. A host under a hard memory ceiling needs it because tsdown
+ * bundles every workspace member concurrently inside one process, while the Typert pass adds a
+ * second TypeScript program in its own Worker Thread beside those builds. One pass per batch
+ * bounds both, and each pass exits before the next starts. Split passes take their Typert
+ * artifacts from the bundle-free pass that reads source only, so generation happens once.
+ * @param root - Repository root containing the compiler and bundle configurations.
+ * @param env - Environment overlay applied to every step.
+ * @returns The gates in report order, each waiting for its predecessor.
+ * @throws If the batch count or an aggregate configuration is invalid.
+ */
+function artifactGates(root: string, env: Record<string, string | undefined>): Gate[] {
+  const shards = hostBundleShards(process.env.DSH_HOST_BUNDLE_SHARDS)
+  const gates: Gate[] = []
+  let previous = 'native'
+  for (const step of libraryBuildSteps(root, 'all')) {
+    if (step.id !== 'host-bundle' || shards === 1) {
+      gates.push(libraryGate(step, [previous], env))
+      previous = step.id
+      continue
+    }
+    const typert = contractSteps(root, 'host').find(candidate => candidate.id === 'host-typert')
+    if (typert === undefined) throw new Error('build: the Host contract steps no longer list host-typert')
+    gates.push(libraryGate(typert, [previous], env))
+    previous = typert.id
+    for (let index = 1; index <= shards; index += 1) {
+      const batch = `${String(index)}/${String(shards)}`
+      const id = index === shards ? 'host-bundle' : `host-bundle-${String(index)}`
+      gates.push({
+        ...libraryGate(step, [previous], { ...env, DSH_TSUND_TYPERT: '0', DSH_TSUND_SHARD: batch }),
+        id,
+        label: `${step.label} ${batch}`,
+      })
+      previous = id
     }
   }
   return gates

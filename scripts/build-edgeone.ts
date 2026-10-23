@@ -18,6 +18,9 @@ const LOW_MEMORY_DEFAULTS = {
   DSH_HOST_TSC_HEAP_MB: '3072',
   // Rollup keeps the module graph twice while writing maps; this host ships without them.
   DSH_WEB_SOURCEMAP: '0',
+  // tsdown bundles all 342 workspace members at once; three passes bound that peak, and the
+  // first one takes Typert from the bundle-free pass instead of a second program in-process.
+  DSH_HOST_BUNDLE_SHARDS: '3',
 } as const
 
 /** Heap ceiling every child that inherits `NODE_OPTIONS` observes. */
