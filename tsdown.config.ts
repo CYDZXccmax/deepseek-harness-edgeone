@@ -42,8 +42,9 @@ function workspaceShard(configured: string | undefined): { readonly index: numbe
  *
  * Two variables let a memory-constrained host reshape the pass without changing what it
  * produces. `DSH_TSUND_SHARD` narrows it to one batch of members, which the build runs once
- * per batch. `DSH_TSUND_TYPERT=0` leaves Typert generation to the standalone pass that reads
- * source, so the bundler carries no second TypeScript program beside its module graphs.
+ * per batch. `DSH_TSUND_TYPERT=0` leaves Typert artifact generation to the standalone pass
+ * that reads source; the plugin stays because its transform is what lowers source decorators,
+ * and a bundle that kept them would fail every JavaScript parser downstream.
  */
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
@@ -60,6 +61,10 @@ export default defineConfig(({ env }) => {
     fixedExtension: false,
     dts: false,
     clean: false,
-    plugins: client || process.env.DSH_TSUND_TYPERT === '0' ? [] : [typertPlugin({ mode: 'workspace', faces: WORKSPACE_TYPERT_FACES })],
+    plugins: client ? [] : [typertPlugin({
+      mode: 'workspace',
+      faces: WORKSPACE_TYPERT_FACES,
+      artifacts: process.env.DSH_TSUND_TYPERT !== '0',
+    })],
   }
 })

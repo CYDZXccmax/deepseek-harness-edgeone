@@ -5,7 +5,9 @@
  * Typert or Remote export are skipped. Workspace mode generates in a Worker
  * Thread started by the pass's first `buildStart`, so bundling continues on the
  * main thread while Typert analyzes; the pass's first `writeBundle` awaits the
- * result and writes every artifact once.
+ * result and writes every artifact once. Lowering is unconditional: `artifacts:
+ * false` only hands generation to a standalone pass, because emitted source
+ * decorators would fail every consumer that parses the bundle as JavaScript.
  * @module @deepseek-ai/dsh-typert-generator/tsdown
  */
 
@@ -45,6 +47,13 @@ export interface TypertPluginOptions {
   readonly mode?: 'package' | 'workspace'
   /** Independent TypeScript program faces included in this phase. */
   readonly faces?: readonly TypertFace[]
+  /**
+   * Emit face artifacts. `false` keeps only the decorator lowering and leaves the
+   * artifacts to a standalone generation pass: a build host that already runs that
+   * pass must not pay for a second TypeScript program inside the bundler, but it
+   * still cannot emit source decorators the runtime would reject.
+   */
+  readonly artifacts?: boolean
 }
 
 /** A workspace-mode generation failure reported by, or observed on, the Typert Worker Thread. */
@@ -63,6 +72,7 @@ type GenerationOutcome =
  * @returns a rolldown-compatible plugin that lowers source decorators and emits local and Host-for-Client artifacts.
  */
 export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlugin {
+  const artifacts = pluginOptions.artifacts !== false
   const artifactsByRoot = new Map<string, readonly WorkspaceEmitResult[]>()
   const generations = new Map<string, Promise<GenerationOutcome>>()
   const emittedWorkspaces = new Set<string>()
@@ -83,7 +93,7 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
     buildStart(inputOptions) {
       // tsdown builds every workspace package concurrently through this one
       // plugin instance; the first package build to start launches generation.
-      if (pluginOptions.mode === 'workspace') void workspaceGeneration(findWorkspaceRoot(inputOptions.cwd))
+      if (artifacts && pluginOptions.mode === 'workspace') void workspaceGeneration(findWorkspaceRoot(inputOptions.cwd))
     },
     transform: {
       // Rolldown evaluates the id filter natively, so non-TypeScript modules
@@ -108,6 +118,8 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
       },
     },
     async writeBundle(bundleOptions) {
+      // A standalone generation pass owns the artifacts in this configuration.
+      if (!artifacts) return
       // options.dir is the package's absolute outDir (<package>/lib); its
       // nearest package.json owns the bundle even when a custom config writes
       // a nested output such as <package>/lib/dev.
