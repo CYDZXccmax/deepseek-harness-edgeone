@@ -52,9 +52,32 @@ build_artifacts() {
   pnpm run build:edgeone
 }
 
+# Pack the Web Worker image and make the worker page the served page.
+#
+# `vite build` emits two pages over one chunk set: index.html, which only boots
+# once `dsh web` injects window.__DSH_BOOT__ and serves the module loader, and
+# preview.html, which carries one extra module tag that starts the Worker host
+# against the image packed below. A static host serves no `dsh web`, so the
+# deployment root has to be the worker page; serving index.html instead loads a
+# shell that fails its first boot with "bootstrap facade is missing".
+preview_deployment() {
+  prepare_node
+  local dist="$root/apps/web/dist"
+  if [ ! -f "$dist/preview.html" ]; then
+    printf 'edgeone: %s is missing; the web gate did not emit the worker page\n' "$dist/preview.html" >&2
+    exit 1
+  fi
+  log "packing the Web Worker image"
+  pnpm --filter @deepseek-ai/dsh-web-frontend exec dsh-pack-vfs-image --out dist/preview/vfs-image.tar.gz
+  # Source maps would publish the whole module graph and only inflate the upload.
+  find "$dist" -name '*.map' -delete
+  cp "$dist/preview.html" "$dist/index.html"
+  log "serving the worker page from $dist/index.html"
+}
+
 case "${1:-}" in
   install) install_dependencies ;;
-  build) build_artifacts ;;
+  build) build_artifacts; preview_deployment ;;
   *)
     printf 'usage: %s install|build\n' "$0" >&2
     exit 2
